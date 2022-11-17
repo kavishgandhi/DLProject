@@ -26,8 +26,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-# os.environ['WANDB_NOTEBOOK_NAME'] = 'pl2text'
-# wandb.init(project="pl2text")
+random.seed(2022)
 
 logger = logging.getLogger(__name__)
 nltk.download('punkt')
@@ -257,11 +256,12 @@ def convert_data(code_file, desc_file):
     print('Converting data...')
     for i in tqdm(range(len(temp_code_data))):
         code, desc = temp_code_data[i].split(), temp_desc_data[i].split()
-        if len(code) >= 4 and len(desc) >= 4:
+        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4:
             code_data.append(temp_code_data[i])
-            desc_data.append(temp_desc_data[i])
-
-    idxs = random.sample(range(len(code_data)), 1000000)
+            desc_data.append(temp_desc_data[i].lower())
+            
+    assert len(code_data) == len(desc_data)
+    idxs = random.sample(range(len(code_data)), 300000)
     sub_set_code_data, sub_set_desc_data = [], []
     for idx in idxs:
         sub_set_code_data.append(code_data[idx])
@@ -279,30 +279,31 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--target_lang", "en_XX",
     "--ignore_pad_token_for_loss", "True",
     "--do_train", "True",
-    "--learning_rate", "1e-4",
+    "--learning_rate", "3e-4",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "16",
-    "--num_train_epochs", "3",
+    "--num_train_epochs", "4",
+    "--save_total_limit", "1",
     "--overwrite_output_dir",
     "--predict_with_generate", "False",
     "--report_to", "wandb",
     "--run_name", "plbart",
     "--logging_steps", "20",
     "--save_strategy", "epoch",
-    "--max_source_length", "200",
-    "--max_target_length", "200",
+    "--max_source_length", "300",
+    "--max_target_length", "80",
     ])
 set_seed(training_args.seed)
 
-training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_pretrain")
-training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain'
+training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_delete_only_desc")
+training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_delete_only_desc'
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.code.pretrain.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.desc.pretrain.txt")
+    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.pretrain.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.pretrain.txt")
 elif data_args.dataset_name == "codesc":
     code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.pretrain.txt",
                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.pretrain.txt")
@@ -364,75 +365,116 @@ if training_args.label_smoothing_factor > 0 and not hasattr(model, "prepare_deco
 
 prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 
+def apply_masking(target):
+    target_idxs = random.sample(range(0, len(target)), max(1, int(0.15 * len(target))))
+
+    mask_token_idxs = random.sample(target_idxs, int(0.8 * len(target_idxs)))
+    random_and_no_change_token_idxs = list(set(target_idxs) - set(mask_token_idxs))
+    rtr_idxs = random.sample(random_and_no_change_token_idxs, int(0.5 * len(random_and_no_change_token_idxs)))
+    token_idxs_left = list(set(range(len(target))) - set(target_idxs))
+
+    for idx in mask_token_idxs:
+        target[idx] = "<mask>"
+
+    for idx in rtr_idxs:
+        rand_token_idx = random.choice(token_idxs_left)
+        target[idx] = target[rand_token_idx]
+
+    return target
+
+def apply_infilling(target):
+    span_lengths = []
+    total_to_be_masked = int(0.15 * len(target))
+    num_masked = 0
+    if total_to_be_masked == 0:
+        idx = random.randint(0, len(target) - 1)
+        target[idx] = "<mask>"
+    else:
+        while num_masked < total_to_be_masked:
+            span_length = 0
+            while span_length == 0:
+                span_length = np.random.poisson(3.5)
+            num_masked += span_length
+            span_lengths.append(span_length)
+
+        if sum(span_lengths) > int(0.45 * len(target)):
+            target = apply_masking(target)
+        else:
+            infilling_mask = [0] * len(target)
+            starts = random.sample(range(0, len(target)), len(span_lengths))
+            for j in range(len(starts)):
+                start = starts[j]
+                end = min(len(infilling_mask), start + span_lengths[j])
+                for k in range(start, end):
+                    infilling_mask[k] = 1
+            temp = []
+            j = 0
+            while j < len(infilling_mask):
+                if infilling_mask[j] == 0:
+                    temp.append(target[j])
+                    j += 1
+                else:
+                    while j < len(infilling_mask) and infilling_mask[j] == 1:
+                        j += 1
+                    temp.append("<mask>")
+            target = temp.copy()
+    return target
+
+def apply_token_deletion(target):
+    target_idxs = random.sample(range(0, len(target)), max(1, int(0.15 * len(target))))
+
+    delete_token_idxs = random.sample(target_idxs, max(1, int(0.8 * len(target_idxs))))
+    rtr_idxs = list(set(target_idxs) - set(delete_token_idxs))
+    to_be_deleted = [False] * len(target)
+    for idx in delete_token_idxs:
+        to_be_deleted[idx] = True
+
+    for idx in rtr_idxs:
+        rand_token_idx = random.choice(rtr_idxs)
+        target[idx] = target[rand_token_idx]
+    
+    deleted_tokens_target = []
+    for i in range(len(target)):
+        if not to_be_deleted[i]:
+            deleted_tokens_target.append(target[i])
+
+    return deleted_tokens_target
+
 def preprocess_function(examples):
     inputs, label_inputs, label_outputs = [], [], []
 
     for i in range(len(examples['text'])):
         input = examples['text'][i].split()
         target = examples['label'][i].split()
-        input_masked = input.copy()
-        target_masked = target.copy()
-        input_idxs = random.sample(range(0, len(input_masked)), int(0.15 * len(input_masked)))
-        target_idxs = random.sample(range(0, len(target_masked)), int(0.15 * len(target_masked)))
-        for idx in input_idxs:
-            input_masked[idx] = "<mask>"
+        target_noised = target.copy()
+        task = random.randint(0, 2)
+        if task == 0:
+            target_noised = apply_masking(target_noised)
+        elif task == 1:
+            target_noised = apply_infilling(target_noised)
+        else:
+            target_noised = apply_token_deletion(target_noised) 
         
-        for idx in target_idxs:
-            target_masked[idx] = "<mask>"
-        
-        model_input = input_masked + ["</s>"] + target_masked
-        model_output = input + ["</s>"] + target
+        model_input = input + ["</s>"] + target_noised
+        # model_output = input + ["</s>"] + target
+        model_output = target
         model_input = ' '.join(model_input)
         model_output = ' '.join(model_output)
+        # print(f'Task: {task}')
+        # print(f'Model input: {model_input}')
+        # print(f'Model output: {model_output}')
+        # print()
+        # print('-----------------------------------------')
+        # print()
+
         inputs.append(model_input)
         label_outputs.append(model_output)
-        # task_nums = random.sample(range(1, 4), random.randint(1, 3))
-        # target_new = target.copy()
-        # for task_num in task_nums:
-        #     if task_num == 1:
-        #         idxs = random.sample(range(0, len(target_new)), int(0.2 * len(target_new)))
-        #         for j in idxs:
-        #             target_new[j] = "<mask>"
-
-        #     elif task_num == 2:
-        #         idx = random.randint(0, len(target_new) - 2)
-        #         span_length = int(0.2 * len(target_new))
-        #         if span_length > 0:
-        #             target_new = target_new[:idx] + ["<mask>"] + target_new[idx + span_length:]
-
-        #     elif task_num == 3:
-        #         idxs = random.sample(range(0, len(target_new)), int(0.2 * len(target_new)))
-        #         for idx in sorted(idxs, reverse=True):
-        #             del target_new[idx]
-
-        # target_new = target.copy()
-        
-        # target_new.insert(0, "[SEP]")
-        # target_new = ' '.join(target_new)
-        # target = ' '.join(target)
-
-        # inputs.append(input)
-        # label_inputs.append(target_new)
-        # label_outputs.append(target)
 
     inputs = [prefix + inp for inp in inputs]
     model_inputs = tokenizer(inputs, max_length=data_args.max_source_length, padding=padding, truncation=True)
-    # model_inputs["input_ids"][0] = model_inputs["input_ids"][0][-1] = "java_en"
-    # print(f'Model input ids: {model_inputs["input_ids"][0]}')
-    # print(f'Model inputs: {tokenizer.convert_ids_to_tokens(model_inputs["input_ids"][0])}')
-    # print()
-    # model_label_inputs = tokenizer(text_target=label_inputs, max_length=data_args.max_target_length, padding=padding, truncation=True)
-    # print(f'Model label input ids: {model_label_inputs["input_ids"][0]}')
-    # print(f'Model label inputs: {tokenizer.convert_ids_to_tokens(model_label_inputs["input_ids"][0])}')
-    # print()
     
     model_label_outputs = tokenizer(text_target=label_outputs, max_length=data_args.max_target_length, padding=padding, truncation=True)
-    # model_label_outputs["input_ids"][0] = model_label_outputs["input_ids"][0] = "java_en"
-    # print(f'Model label output ids: {model_label_outputs["input_ids"][0]}')
-    # print(f'Model label outputs: {tokenizer.convert_ids_to_tokens(model_label_outputs["input_ids"][0])}')
-    # print('---------------------------------')
-    # model_inputs['input_ids'][0].extend(model_label_inputs["input_ids"][0])
-    # model_inputs['attention_mask'][0].extend(model_label_inputs["attention_mask"][0])
+
     # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
     # padding in the loss.
     if padding == "max_length" and data_args.ignore_pad_token_for_loss:
@@ -464,7 +506,7 @@ print(f'Example label tokens: {tokenizer.convert_ids_to_tokens(label_ids)}')
 print()
 
 model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.target_lang)
-print(f'Decoder start token id: {model.config.decoder_start_token_id}')
+print(f'Decoder start token id: {tokenizer.convert_ids_to_tokens(model.config.decoder_start_token_id)}')
 
 # Data collator
 label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id

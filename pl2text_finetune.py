@@ -1,4 +1,5 @@
 import pickle as pkl
+from numpy import pad
 from tqdm import tqdm
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.optim import Adam, AdamW, lr_scheduler
@@ -260,17 +261,28 @@ class DataTrainingArguments:
             self.val_max_target_length = self.max_target_length
 
 def convert_data(code_file, desc_file):
+    code_data, desc_data = [], []
     with open(code_file, 'r') as f1, open(desc_file, 'r') as f2:
-        code_data = f1.read()
-        desc_data = f2.read()
-        return code_data.split('\n'), desc_data.split('\n')
+        temp_code_data = f1.read()
+        temp_desc_data = f2.read()
+    
+    temp_code_data = temp_code_data.split('\n')
+    temp_desc_data = temp_desc_data.split('\n')
+    print('Converting data...')
+    for i in tqdm(range(len(temp_code_data))):
+        code, desc = temp_code_data[i].split(), temp_desc_data[i].split()
+        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4:
+            code_data.append(temp_code_data[i])
+            desc_data.append(temp_desc_data[i].lower())
+    
+    return code_data, desc_data
 
 parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
 model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--train_file", "train_data_text_label.json",
     "--validation_file", "val_data_text_label.json",
     "--test_file", "test_data_text_label.json",
-    "--model_name_or_path", "uclanlp/plbart-base",
+    "--model_name_or_path", "/localscratch/vjain312/pl2text/codesc_java_en_XX_pretrain_mask_infil_only_desc/checkpoint-37500",
     "--dataset_name", "codesc",
     "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
@@ -279,7 +291,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
-    "--learning_rate", "1e-5",
+    "--learning_rate", "1e-4",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "16",
     "--per_device_eval_batch_size", "16",
@@ -292,15 +304,15 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--save_strategy", "epoch",
     "--evaluation_strategy", "steps",
     "--eval_steps", "4000",
-    "--save_total_limit", "2",
-    "--max_source_length", "200",
-    "--max_target_length", "60",
+    "--save_total_limit", "1",
+    "--max_source_length", "250",
+    "--max_target_length", "80",
     ])
 set_seed(training_args.seed)
 
 if 'checkpoint' in model_args.model_name_or_path:
-    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_finetuned')
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_finetuned'
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_infil_only_desc_finetuned')
+    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_only_desc_finetuned'
 else:
     training_args.output_dir = os.path.join(training_args.output_dir, data_args.dataset_name)
     training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
@@ -309,8 +321,8 @@ if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
 elif data_args.dataset_name == "codesc":
     code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
@@ -323,8 +335,8 @@ with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.desc.val.txt")
+    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
 elif data_args.dataset_name == "codesc":
     code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
@@ -337,8 +349,8 @@ with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}/{data_args.source_lang}.desc.test.txt")
+    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
 elif data_args.dataset_name == "codesc":
     code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
