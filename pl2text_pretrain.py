@@ -261,7 +261,7 @@ def convert_data(code_file, desc_file):
             desc_data.append(temp_desc_data[i].lower())
             
     assert len(code_data) == len(desc_data)
-    idxs = random.sample(range(len(code_data)), 300000)
+    idxs = random.sample(range(len(code_data)), 1000000)
     sub_set_code_data, sub_set_desc_data = [], []
     for idx in idxs:
         sub_set_code_data.append(code_data[idx])
@@ -282,7 +282,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--learning_rate", "3e-4",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "16",
-    "--num_train_epochs", "4",
+    "--num_train_epochs", "3",
     "--save_total_limit", "1",
     "--overwrite_output_dir",
     "--predict_with_generate", "False",
@@ -295,8 +295,8 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     ])
 set_seed(training_args.seed)
 
-training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_delete_only_desc")
-training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_delete_only_desc'
+training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_only_desc_1M")
+training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_only_desc_1M'
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
@@ -447,7 +447,7 @@ def preprocess_function(examples):
         input = examples['text'][i].split()
         target = examples['label'][i].split()
         target_noised = target.copy()
-        task = random.randint(0, 2)
+        task = random.randint(0, 1)
         if task == 0:
             target_noised = apply_masking(target_noised)
         elif task == 1:

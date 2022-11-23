@@ -288,22 +288,22 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--test_file", "test_data_text_label.json",
     "--model_name_or_path", "microsoft/codebert-base",
     "--dataset_name", "codesc",
-    "--output_dir", "\\pl2text",
+    "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
-    "--target_lang", "en_XX",
+    "--target_lang", "en",
     "--ignore_pad_token_for_loss", "True",
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
     "--learning_rate", "1e-4",
     "--generation_num_beams", "4",
-    "--per_device_train_batch_size", "16",
-    "--per_device_eval_batch_size", "16",
-    "--num_train_epochs", "20",
+    "--per_device_train_batch_size", "8",
+    "--per_device_eval_batch_size", "8",
+    "--num_train_epochs", "10",
     "--overwrite_output_dir",
     "--predict_with_generate", "True",
     "--report_to", "wandb",
-    "--run_name", "plbart",
+    "--run_name", "codebert",
     "--logging_steps", "20",
     "--save_strategy", "epoch",
     "--evaluation_strategy", "steps",
@@ -315,87 +315,92 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
 set_seed(training_args.seed)
 
 if 'checkpoint' in model_args.model_name_or_path:
-    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_infil_only_desc_finetuned')
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_only_desc_finetuned'
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_codebert')
+    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
 else:
-    training_args.output_dir = os.path.join(training_args.output_dir, data_args.dataset_name)
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_codebert')
     training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
 
 if not os.path.exists(training_args.output_dir):
     os.makedirs(training_args.output_dir)
 
-# if data_args.dataset_name == "codesearchnet":
-#     code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
-# elif data_args.dataset_name == "codesc":
-#     code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
-# with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 'w') as openfile:
-#     for code, desc in zip(code_data_train, desc_data_train):
-#         temp = dict()
-#         temp["text"] = code
-#         temp["label"] = desc
-#         json.dump(temp, openfile)
-#         openfile.write('\n')
+if data_args.dataset_name == "codesearchnet":
+    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+elif data_args.dataset_name == "codesc":
+    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 'w') as openfile:
+    for code, desc in zip(code_data_train, desc_data_train):
+        temp = dict()
+        temp["text"] = code
+        temp["label"] = desc
+        json.dump(temp, openfile)
+        openfile.write('\n')
 
-# if data_args.dataset_name == "codesearchnet":
-#     code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
-# elif data_args.dataset_name == "codesc":
-#     code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
-# with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w') as openfile:
-#     for code, desc in zip(code_data_val, desc_data_val):
-#         temp = dict()
-#         temp["text"] = code
-#         temp["label"] = desc
-#         json.dump(temp, openfile)
-#         openfile.write('\n')
+if data_args.dataset_name == "codesearchnet":
+    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+elif data_args.dataset_name == "codesc":
+    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w') as openfile:
+    for code, desc in zip(code_data_val, desc_data_val):
+        temp = dict()
+        temp["text"] = code
+        temp["label"] = desc
+        json.dump(temp, openfile)
+        openfile.write('\n')
 
-# if data_args.dataset_name == "codesearchnet":
-#     code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
-# elif data_args.dataset_name == "codesc":
-#     code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-#                                                     f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
-# with open(os.path.join(training_args.output_dir, 'test_data_text_label.json'), 'w') as openfile:
-#     for code, desc in zip(code_data_test, desc_data_test):
-#         temp = dict()
-#         temp["text"] = code
-#         temp["label"] = desc
-#         json.dump(temp, openfile)
-#         openfile.write('\n')
+if data_args.dataset_name == "codesearchnet":
+    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+elif data_args.dataset_name == "codesc":
+    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
+                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+with open(os.path.join(training_args.output_dir, 'test_data_text_label.json'), 'w') as openfile:
+    for code, desc in zip(code_data_test, desc_data_test):
+        temp = dict()
+        temp["text"] = code
+        temp["label"] = desc
+        json.dump(temp, openfile)
+        openfile.write('\n')
 
 extension = "json"
-curr_dir = os.getcwd()
-raw_train_dataset = load_dataset(extension, data_files='.'+os.path.join(training_args.output_dir, data_args.train_file), split=['train'])[0]
-raw_validation_dataset = load_dataset(extension, data_files='.'+os.path.join(training_args.output_dir, data_args.validation_file), split=['train'])[0]
-raw_test_dataset = load_dataset(extension, data_files='.'+os.path.join(training_args.output_dir, data_args.test_file), split=['train'])[0]
+raw_train_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.train_file), split="train")
+raw_validation_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.validation_file), split="train")
+raw_test_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.test_file), split="train")
 
 tokenizer = AutoTokenizer.from_pretrained(
-    'microsoft/codebert-base',
-    src_lang=data_args.source_lang,
-    tgt_lang=data_args.target_lang,
+    model_args.model_name_or_path,
     use_fast=model_args.use_fast_tokenizer,
 )
-encoder_config = AutoConfig.from_pretrained(
-    'microsoft/codebert-base',
+
+model = EncoderDecoderModel.from_encoder_decoder_pretrained(
+    model_args.model_name_or_path, 
+    model_args.model_name_or_path, 
 )
-decoder_config = GPT2Config()
-# model = AutoModelForSeq2SeqLM.from_pretrained(
-#     'microsoft/codebert-base',
-#     config=config,
-# )
-# model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.target_lang)
-config = EncoderDecoderConfig.from_encoder_decoder_configs(encoder_config, decoder_config)
-model = EncoderDecoderModel(config=config)
-model.config.decoder.pad_token_id = tokenizer.pad_token_id
+
+tokenizer.bos_token = tokenizer.cls_token
+tokenizer.eos_token = tokenizer.sep_token
+
+model.config.decoder_start_token_id = tokenizer.bos_token_id
+model.config.eos_token_id = tokenizer.eos_token_id
 model.config.pad_token_id = tokenizer.pad_token_id
+model.config.vocab_size = model.config.encoder.vocab_size
+
+print()
+src_text = raw_train_dataset[0]["text"]
+print(f'Raw code: {src_text}')
+inputs = tokenizer(src_text, max_length=data_args.max_source_length, padding="max_length", return_tensors="pt").input_ids
+print(f'Tokenized code: {tokenizer.convert_ids_to_tokens(list(inputs[0]))}')
+print()
 
 tgt_text = raw_train_dataset[0]["label"]
 print(f'Raw description: {tgt_text}')
 labels = tokenizer(text_target=tgt_text, max_length=data_args.max_target_length, padding="max_length", return_tensors="pt").input_ids
 print(f'Tokenized description: {tokenizer.convert_ids_to_tokens(list(labels[0]))}')
+print()
 
 max_target_length = data_args.max_target_length
 padding = "max_length" if data_args.pad_to_max_length else False
@@ -408,25 +413,16 @@ if training_args.label_smoothing_factor > 0 and not hasattr(model, "prepare_deco
 
 prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 
-def preprocess_function(examples):
-    inputs, targets = [], []
-
-    for i in range(len(examples['text'])):
-        inputs.append(examples['text'][i])
-        targets.append(examples['label'][i])
-
-    inputs = [prefix + inp for inp in inputs]
-    model_inputs = tokenizer(inputs, max_length=data_args.max_source_length, padding=padding, truncation=True)
-    labels = tokenizer(text_target=targets, max_length=data_args.max_target_length, padding=padding, truncation=True)
-    # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
-    # padding in the loss.
-    if padding == "max_length" and data_args.ignore_pad_token_for_loss:
-        labels["input_ids"] = [
-            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-        ]
-        
-    model_inputs["labels"] = labels["input_ids"]
-    return model_inputs
+def preprocess_function(batch):
+    inputs = tokenizer(batch['text'], max_length=data_args.max_source_length, padding="max_length", truncation=True)
+    labels = tokenizer(batch['label'], max_length=data_args.max_target_length, padding="max_length", truncation=True)
+    batch["input_ids"] = inputs.input_ids
+    batch["attention_mask"] = inputs.attention_mask
+    batch["decoder_input_ids"] = labels.input_ids
+    batch["decoder_attention_mask"] = labels.attention_mask
+    batch["labels"] = labels.input_ids.copy()
+    batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
+    return batch
 
 column_names = raw_train_dataset.column_names
 train_dataset = raw_train_dataset.map(
@@ -456,79 +452,41 @@ test_dataset = raw_test_dataset.map(
     desc="Running tokenizer on test dataset",
 )
 
+print('Vocab Size: ', model.config.encoder.vocab_size)
+
 ids = list(train_dataset[0]["input_ids"])
 print(f'Example input ids: {ids}')
 print(f'Example input tokens: {tokenizer.convert_ids_to_tokens(ids)}')
 print()
 
-label_ids = list(train_dataset[0]["labels"])
+label_ids = list(train_dataset[0]["decoder_input_ids"])
 print(f'Example label ids: {label_ids}')
 print(f'Example label tokens: {tokenizer.convert_ids_to_tokens(label_ids)}')
 print()
-
-model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.target_lang)
-print(f'Decoder start token id: {model.config.decoder_start_token_id}')
-
-# Data collator
-label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
-data_collator = DataCollatorForSeq2Seq(
-    tokenizer,
-    label_pad_token_id=label_pad_token_id,
-    pad_to_multiple_of=8 if training_args.fp16 else None,
-)
 
 sacrebleu = evaluate.load("sacrebleu")
 bleu = evaluate.load("bleu")
 rouge = evaluate.load("rouge")
 
-def postprocess_text(preds, labels):
-    preds = [pred.strip() for pred in preds]
-    labels = [label.strip() for label in labels]
-    return preds, labels
-
 def compute_metrics(eval_preds):
-    preds, labels = eval_preds
-    if isinstance(preds, tuple):
-        preds = preds[0]
-    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    if data_args.ignore_pad_token_for_loss:
-        # Replace -100 in the labels as we can't decode them.
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    label_ids = eval_preds.label_ids
+    pred_ids = eval_preds.predictions
 
-    # Some simple post-processing
-    decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+    pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    label_ids[label_ids == -100] = tokenizer.pad_token_id
+    label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
     result = {}
     
-    result["sacrebleu"] = sacrebleu.compute(predictions=decoded_preds, references=decoded_labels)
-    result["bleu"] = bleu.compute(predictions=decoded_preds, references=decoded_labels)
-    result["bleu_1"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=1)
-    result["bleu_2"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=2)
-    result["bleu_3"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=3)
-    result["bleu_4"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=4)
-
-    result["rouge"] = rouge.compute(predictions=decoded_preds, references=decoded_labels)
-    
-    prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
-    result["gen_len"] = np.mean(prediction_lens)
+    result["sacrebleu"] = sacrebleu.compute(predictions=pred_str, references=label_str)
+    result["bleu"] = bleu.compute(predictions=pred_str, references=label_str)
+    result["bleu_1"] = bleu.compute(predictions=pred_str, references=label_str, max_order=1)
+    result["bleu_2"] = bleu.compute(predictions=pred_str, references=label_str, max_order=2)
+    result["bleu_3"] = bleu.compute(predictions=pred_str, references=label_str, max_order=3)
+    result["bleu_4"] = bleu.compute(predictions=pred_str, references=label_str, max_order=4)
+    result["rouge"] = rouge.compute(predictions=pred_str, references=label_str)
     # result = {k: round(v, 4) for k, v in result.items()}
     return result
-
-# Detecting last checkpoint.
-last_checkpoint = None
-if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
-    last_checkpoint = get_last_checkpoint(training_args.output_dir)
-    if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
-        raise ValueError(
-            f"Output directory ({training_args.output_dir}) already exists and is not empty. "
-            "Use --overwrite_output_dir to overcome."
-        )
-    elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
-        logger.info(
-            f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
-            "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
-        )
 
 # Initialize our Trainer
 trainer = Seq2SeqTrainer(
@@ -537,18 +495,12 @@ trainer = Seq2SeqTrainer(
     train_dataset=train_dataset if training_args.do_train else None,
     eval_dataset=val_dataset if training_args.do_eval else None,
     tokenizer=tokenizer,
-    data_collator=data_collator,
+    # data_collator=data_collator,
     compute_metrics=compute_metrics if training_args.predict_with_generate else None,
 )
 
-checkpoint = None
-if training_args.resume_from_checkpoint is not None:
-    checkpoint = training_args.resume_from_checkpoint
-elif last_checkpoint is not None:
-    checkpoint = last_checkpoint
-
 if training_args.do_train:
-    train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    train_result = trainer.train()
     trainer.save_model()  # Saves the tokenizer too for easy upload
     trainer.save_metrics("train", train_result.metrics)
     print(train_result)
