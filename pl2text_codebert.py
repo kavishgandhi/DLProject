@@ -295,7 +295,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
-    "--learning_rate", "1e-4",
+    "--learning_rate", "1e-5",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "8",
     "--per_device_eval_batch_size", "8",
