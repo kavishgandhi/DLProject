@@ -291,15 +291,14 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
     "--target_lang", "en",
-    "--ignore_pad_token_for_loss", "True",
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
     "--learning_rate", "1e-6",
     "--generation_num_beams", "4",
-    "--per_device_train_batch_size", "8",
-    "--per_device_eval_batch_size", "8",
-    "--num_train_epochs", "10",
+    "--per_device_train_batch_size", "16",
+    "--per_device_eval_batch_size", "16",
+    "--num_train_epochs", "20",
     "--overwrite_output_dir",
     "--predict_with_generate", "True",
     "--report_to", "wandb",
@@ -381,18 +380,18 @@ model = EncoderDecoderModel.from_encoder_decoder_pretrained(
     model_args.model_name_or_path, 
     model_args.model_name_or_path, 
 )
-tokenizer.add_tokens([SRC_LANG, TGT_LANG], special_tokens=True)
-tokenizer.bos_token = tokenizer.cls_token
-tokenizer.eos_token = tokenizer.sep_token
+# tokenizer.add_tokens([SRC_LANG, TGT_LANG], special_tokens=True)
+# tokenizer.bos_token = tokenizer.cls_token
+# tokenizer.eos_token = tokenizer.sep_token
 
-model.encoder.resize_token_embeddings(len(tokenizer))
-model.decoder.resize_token_embeddings(len(tokenizer))
-model.config.decoder_start_token_id = tokenizer.eos_token_id #tokenizer.convert_tokens_to_ids(TGT_LANG)
+# model.encoder.resize_token_embeddings(len(tokenizer))
+# model.decoder.resize_token_embeddings(len(tokenizer))
+model.config.decoder_start_token_id = tokenizer.bos_token_id #tokenizer.convert_tokens_to_ids(TGT_LANG)
 model.config.eos_token_id = tokenizer.eos_token_id
 model.config.pad_token_id = tokenizer.pad_token_id
 model.config.vocab_size = model.config.decoder.vocab_size
-model.config.max_length = 80
-model.config.min_length = 4
+model.config.max_length = 142
+model.config.min_length = 56
 model.config.no_repeat_ngram_size = 3
 model.config.early_stopping = True
 model.config.length_penalty = 2.0
@@ -435,8 +434,7 @@ def preprocess_function(batch):
     batch["decoder_input_ids"] = labels.input_ids
     batch["decoder_attention_mask"] = labels.attention_mask
     batch["labels"] = labels.input_ids.copy()
-    if padding == "max_length" and data_args.ignore_pad_token_for_loss:
-        batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
+    batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
     return batch
 
 column_names = raw_train_dataset.column_names
@@ -490,7 +488,7 @@ def compute_metrics(eval_preds):
     pred_ids = eval_preds.predictions
 
     pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    label_ids[label_ids == -100] = tokenizer.pad_token_id
+    label_ids[label_ids == -100] = tokenizer.eos_token_id
     label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
     result = {}
     

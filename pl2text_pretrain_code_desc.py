@@ -291,12 +291,12 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--logging_steps", "20",
     "--save_strategy", "epoch",
     "--max_source_length", "300",
-    "--max_target_length", "80",
+    "--max_target_length", "300",
     ])
 set_seed(training_args.seed)
 
-training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_desc_only")
-training_args.run_name = f"{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_desc_only"
+training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil")
+training_args.run_name = f"{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil"
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
@@ -446,17 +446,22 @@ def preprocess_function(examples):
     for i in range(len(examples['text'])):
         input = examples['text'][i].split()
         target = examples['label'][i].split()
+        input_noised = input.copy()
         target_noised = target.copy()
-        task = random.randint(0, 0)
+        task = random.randint(0, 1)
         if task == 0:
             target_noised = apply_masking(target_noised)
+            input_noised = apply_masking(input_noised)
         elif task == 1:
             target_noised = apply_infilling(target_noised)
+            input_noised = apply_infilling(input_noised)
         else:
             target_noised = apply_token_deletion(target_noised) 
+            input_noised = apply_token_deletion(input_noised)
         
-        model_input = input + ["</s>"] + target_noised
-        model_output = target
+        model_input = input_noised + ["</s>"] + target_noised
+        model_output = input + ["</s>"] + target
+        # model_output = target
         model_input = ' '.join(model_input)
         model_output = ' '.join(model_output)
         # print(f'Task: {task}')

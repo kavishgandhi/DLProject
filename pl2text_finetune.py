@@ -282,7 +282,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--train_file", "train_data_text_label.json",
     "--validation_file", "val_data_text_label.json",
     "--test_file", "test_data_text_label.json",
-    "--model_name_or_path", "/localscratch/vjain312/pl2text/codesc_java_en_XX_pretrain_mask_only_desc_1M/checkpoint-93750",
+    "--model_name_or_path", "/localscratch/vjain312/pl2text/codesc_java_en_XX_pretrain_mask_infil_desc_only/checkpoint-37500",
     "--dataset_name", "codesc",
     "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
@@ -291,7 +291,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
-    "--learning_rate", "3e-4",
+    "--learning_rate", "1e-4",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "16",
     "--per_device_eval_batch_size", "16",
@@ -311,8 +311,8 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
 set_seed(training_args.seed)
 
 if 'checkpoint' in model_args.model_name_or_path:
-    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_only_desc_1M_finetuned')
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_only_desc_1M_finetuned'
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_infil_desc_only_finetuned')
+    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_desc_only_finetuned'
 else:
     training_args.output_dir = os.path.join(training_args.output_dir, data_args.dataset_name)
     training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
@@ -432,7 +432,7 @@ column_names = raw_train_dataset.column_names
 train_dataset = raw_train_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on train dataset",
@@ -441,7 +441,7 @@ train_dataset = raw_train_dataset.map(
 val_dataset = raw_validation_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on validation dataset"
@@ -450,7 +450,7 @@ val_dataset = raw_validation_dataset.map(
 test_dataset = raw_test_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on test dataset",
