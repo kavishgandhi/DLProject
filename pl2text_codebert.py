@@ -313,6 +313,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--max_target_length", "80",
     ])
 set_seed(training_args.seed)
+SRC_LANG, TGT_LANG = f"<{data_args.source_lang}>", f"<{data_args.target_lang}>"
 
 if 'checkpoint' in model_args.model_name_or_path:
     training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_codebert')
@@ -380,14 +381,22 @@ model = EncoderDecoderModel.from_encoder_decoder_pretrained(
     model_args.model_name_or_path, 
     model_args.model_name_or_path, 
 )
-
+tokenizer.add_tokens([SRC_LANG, TGT_LANG], special_tokens=True)
 tokenizer.bos_token = tokenizer.cls_token
 tokenizer.eos_token = tokenizer.sep_token
 
-model.config.decoder_start_token_id = tokenizer.bos_token_id
+model.encoder.resize_token_embeddings(len(tokenizer))
+model.decoder.resize_token_embeddings(len(tokenizer))
+model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(TGT_LANG)
 model.config.eos_token_id = tokenizer.eos_token_id
 model.config.pad_token_id = tokenizer.pad_token_id
-model.config.vocab_size = model.config.encoder.vocab_size
+model.config.vocab_size = model.config.decoder.vocab_size
+model.config.max_length = 80
+model.config.min_length = 4
+model.config.no_repeat_ngram_size = 3
+model.config.early_stopping = True
+model.config.length_penalty = 2.0
+model.config.num_beams = training_args.generation_num_beams
 
 print()
 src_text = raw_train_dataset[0]["text"]
@@ -398,7 +407,7 @@ print()
 
 tgt_text = raw_train_dataset[0]["label"]
 print(f'Raw description: {tgt_text}')
-labels = tokenizer(text_target=tgt_text, max_length=data_args.max_target_length, padding="max_length", return_tensors="pt").input_ids
+labels = tokenizer(tgt_text, max_length=data_args.max_target_length, padding="max_length", return_tensors="pt").input_ids
 print(f'Tokenized description: {tokenizer.convert_ids_to_tokens(list(labels[0]))}')
 print()
 
@@ -412,23 +421,30 @@ if training_args.label_smoothing_factor > 0 and not hasattr(model, "prepare_deco
     )
 
 prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
+padding = "max_length" if data_args.pad_to_max_length else False
 
 def preprocess_function(batch):
-    inputs = tokenizer(batch['text'], max_length=data_args.max_source_length, padding="max_length", truncation=True)
-    labels = tokenizer(batch['label'], max_length=data_args.max_target_length, padding="max_length", truncation=True)
+    for i in range(len(batch["text"])):
+        batch['text'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['text'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{SRC_LANG}"
+        batch['label'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['label'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{TGT_LANG}"
+    inputs = tokenizer(batch["text"], max_length=data_args.max_source_length, add_special_tokens=False, padding="max_length", truncation=True)
+    labels = tokenizer(batch["label"], max_length=data_args.max_target_length, add_special_tokens=False, padding="max_length", truncation=True)
+
     batch["input_ids"] = inputs.input_ids
     batch["attention_mask"] = inputs.attention_mask
     batch["decoder_input_ids"] = labels.input_ids
     batch["decoder_attention_mask"] = labels.attention_mask
     batch["labels"] = labels.input_ids.copy()
-    batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
+    if padding == "max_length" and data_args.ignore_pad_token_for_loss:
+        batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
     return batch
 
 column_names = raw_train_dataset.column_names
 train_dataset = raw_train_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
+    # batch_size=1,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on train dataset",
@@ -437,7 +453,7 @@ train_dataset = raw_train_dataset.map(
 val_dataset = raw_validation_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on validation dataset"
@@ -446,13 +462,14 @@ val_dataset = raw_validation_dataset.map(
 test_dataset = raw_test_dataset.map(
     preprocess_function,
     batched=True,
-    batch_size=1,
+    batch_size=training_args.per_device_train_batch_size,
     remove_columns=column_names,
     num_proc=data_args.preprocessing_num_workers,
     desc="Running tokenizer on test dataset",
 )
 
-print('Vocab Size: ', model.config.encoder.vocab_size)
+print('Vocab size: ', model.config.encoder.vocab_size)
+print('Decoder start token: ', tokenizer.convert_ids_to_tokens(model.config.decoder_start_token_id))
 
 ids = list(train_dataset[0]["input_ids"])
 print(f'Example input ids: {ids}')
@@ -475,11 +492,9 @@ def compute_metrics(eval_preds):
     pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
     label_ids[label_ids == -100] = tokenizer.pad_token_id
     label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-
     result = {}
     
     result["sacrebleu"] = sacrebleu.compute(predictions=pred_str, references=label_str)
-    result["bleu"] = bleu.compute(predictions=pred_str, references=label_str)
     result["bleu_1"] = bleu.compute(predictions=pred_str, references=label_str, max_order=1)
     result["bleu_2"] = bleu.compute(predictions=pred_str, references=label_str, max_order=2)
     result["bleu_3"] = bleu.compute(predictions=pred_str, references=label_str, max_order=3)
