@@ -38,9 +38,9 @@ from transformers import (
     Seq2SeqTrainingArguments,
     set_seed,
     EncoderDecoderModel,
-    BertConfig,
+    BertTokenizer,
     EncoderDecoderConfig,
-    GPT2Config,
+    GPT2Tokenizer,
 )
 from transformers.trainer_utils import get_last_checkpoint
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -288,20 +288,20 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--test_file", "test_data_text_label.json",
     "--model_name_or_path", "huggingface/CodeBERTa-small-v1",
     "--dataset_name", "codesc",
-    "--output_dir", "/localscratch/vjain312/pl2text",
+    "--output_dir", "./pl2text",
     "--source_lang", "java",
     "--target_lang", "en",
+    "--ignore_pad_token_for_loss", "True",
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
     "--learning_rate", "1e-6",
     "--generation_num_beams", "4",
-    "--per_device_train_batch_size", "16",
-    "--per_device_eval_batch_size", "16",
-    "--num_train_epochs", "20",
+    "--per_device_train_batch_size", "8",
+    "--per_device_eval_batch_size", "8",
+    "--num_train_epochs", "10",
     "--overwrite_output_dir",
     "--predict_with_generate", "True",
-    "--report_to", "wandb",
     "--run_name", "codebert",
     "--logging_steps", "20",
     "--save_strategy", "epoch",
@@ -325,11 +325,11 @@ if not os.path.exists(training_args.output_dir):
     os.makedirs(training_args.output_dir)
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
+                                                    f"./{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
+                                                    f"./{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
 with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 'w') as openfile:
     for code, desc in zip(code_data_train, desc_data_train):
         temp = dict()
@@ -339,11 +339,11 @@ with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+    code_data_val, desc_data_val = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
+                                                f"./{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+    code_data_val, desc_data_val = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
+                                                f"./{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
 with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w') as openfile:
     for code, desc in zip(code_data_val, desc_data_val):
         temp = dict()
@@ -353,11 +353,11 @@ with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+    code_data_test, desc_data_test = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
+                                                    f"./{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+    code_data_test, desc_data_test = convert_data(f"./{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
+                                                    f"./{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
 with open(os.path.join(training_args.output_dir, 'test_data_text_label.json'), 'w') as openfile:
     for code, desc in zip(code_data_test, desc_data_test):
         temp = dict()
@@ -371,43 +371,79 @@ raw_train_dataset = load_dataset(extension, data_files=os.path.join(training_arg
 raw_validation_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.validation_file), split="train")
 raw_test_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.test_file), split="train")
 
-tokenizer = AutoTokenizer.from_pretrained(
+model = EncoderDecoderModel.from_encoder_decoder_pretrained(model_args.model_name_or_path, "gpt2")
+model.decoder.config.use_cache = False
+
+roberta_tokenizer = AutoTokenizer.from_pretrained(
     model_args.model_name_or_path,
     use_fast=model_args.use_fast_tokenizer,
 )
+roberta_tokenizer.add_tokens([SRC_LANG, TGT_LANG], special_tokens=True)
+roberta_tokenizer.bos_token = roberta_tokenizer.cls_token
+roberta_tokenizer.eos_token = roberta_tokenizer.sep_token
 
-model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-    model_args.model_name_or_path, 
-    model_args.model_name_or_path, 
-)
+
+# make sure GPT2 appends EOS in begin and end
+def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
+    outputs = [self.bos_token_id] + token_ids_0 + [self.eos_token_id]
+    return outputs
+
+
+GPT2Tokenizer.build_inputs_with_special_tokens = build_inputs_with_special_tokens
+gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+# set pad_token_id to unk_token_id -> be careful here as unk_token_id == eos_token_id == bos_token_id
+gpt2_tokenizer.pad_token = gpt2_tokenizer.unk_token
+
+
+model.encoder.resize_token_embeddings(len(roberta_tokenizer))
+model.decoder.resize_token_embeddings(len(gpt2_tokenizer))
+model.config.decoder_start_token_id = gpt2_tokenizer.bos_token_id
+model.config.eos_token_id = gpt2_tokenizer.eos_token_id
+model.config.max_length = 142
+model.config.min_length = 56
+model.config.no_repeat_ngram_size = 3
+model.early_stopping = True
+model.length_penalty = 2.0
+model.num_beams = training_args.generation_num_beams
+
+# tokenizer = AutoTokenizer.from_pretrained(
+#     model_args.model_name_or_path,
+#     use_fast=model_args.use_fast_tokenizer,
+# )
+
+# model = EncoderDecoderModel.from_encoder_decoder_pretrained(
+#     model_args.model_name_or_path, 
+#     model_args.model_name_or_path, 
+# )
 # tokenizer.add_tokens([SRC_LANG, TGT_LANG], special_tokens=True)
 # tokenizer.bos_token = tokenizer.cls_token
 # tokenizer.eos_token = tokenizer.sep_token
 
 # model.encoder.resize_token_embeddings(len(tokenizer))
 # model.decoder.resize_token_embeddings(len(tokenizer))
-model.config.decoder_start_token_id = tokenizer.bos_token_id #tokenizer.convert_tokens_to_ids(TGT_LANG)
-model.config.eos_token_id = tokenizer.eos_token_id
-model.config.pad_token_id = tokenizer.pad_token_id
-model.config.vocab_size = model.config.decoder.vocab_size
-model.config.max_length = 142
-model.config.min_length = 56
-model.config.no_repeat_ngram_size = 3
-model.config.early_stopping = True
-model.config.length_penalty = 2.0
-model.config.num_beams = training_args.generation_num_beams
+# model.config.decoder_start_token_id = tokenizer.eos_token_id #tokenizer.convert_tokens_to_ids(TGT_LANG)
+# model.config.eos_token_id = tokenizer.eos_token_id
+# model.config.pad_token_id = tokenizer.pad_token_id
+# model.config.vocab_size = model.config.decoder.vocab_size
+# model.config.max_length = 80
+# model.config.min_length = 4
+# model.config.no_repeat_ngram_size = 3
+# model.config.early_stopping = True
+# model.config.length_penalty = 2.0
+# model.config.num_beams = training_args.generation_num_beams
+
 
 print()
 src_text = raw_train_dataset[0]["text"]
 print(f'Raw code: {src_text}')
-inputs = tokenizer(src_text, max_length=data_args.max_source_length, padding="max_length", return_tensors="pt").input_ids
-print(f'Tokenized code: {tokenizer.convert_ids_to_tokens(list(inputs[0]))}')
+inputs = roberta_tokenizer(src_text, max_length=data_args.max_source_length, padding="max_length", return_tensors="pt").input_ids
+print(f'Tokenized code: {roberta_tokenizer.convert_ids_to_tokens(list(inputs[0]))}')
 print()
 
 tgt_text = raw_train_dataset[0]["label"]
 print(f'Raw description: {tgt_text}')
-labels = tokenizer(tgt_text, max_length=data_args.max_target_length, padding="max_length", return_tensors="pt").input_ids
-print(f'Tokenized description: {tokenizer.convert_ids_to_tokens(list(labels[0]))}')
+labels = gpt2_tokenizer(tgt_text, max_length=data_args.max_target_length, padding="max_length", return_tensors="pt").input_ids
+print(f'Tokenized description: {gpt2_tokenizer.convert_ids_to_tokens(list(labels[0]))}')
 print()
 
 max_target_length = data_args.max_target_length
@@ -426,15 +462,19 @@ def preprocess_function(batch):
     # for i in range(len(batch["text"])):
     #     batch['text'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['text'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{SRC_LANG}"
     #     batch['label'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['label'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{TGT_LANG}"
-    inputs = tokenizer(batch["text"], max_length=data_args.max_source_length, padding="max_length", truncation=True)
-    labels = tokenizer(batch["label"], max_length=data_args.max_target_length, padding="max_length", truncation=True)
+    inputs = roberta_tokenizer(batch["text"], max_length=data_args.max_source_length, padding="max_length", truncation=True)
+    labels = gpt2_tokenizer(batch["label"], max_length=data_args.max_target_length, padding="max_length", truncation=True)
 
     batch["input_ids"] = inputs.input_ids
     batch["attention_mask"] = inputs.attention_mask
     batch["decoder_input_ids"] = labels.input_ids
     batch["decoder_attention_mask"] = labels.attention_mask
     batch["labels"] = labels.input_ids.copy()
-    batch["labels"] = [[-100 if token == tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
+    # if padding == "max_length" and data_args.ignore_pad_token_for_loss:
+    #     batch["labels"] = [[-100 if token == gpt2_tokenizer.pad_token_id else token for token in labels] for labels in batch["labels"]]
+    batch["labels"] = [
+        [-100 if mask == 0 else token for mask, token in mask_and_tokens] for mask_and_tokens in [zip(masks, labels) for masks, labels in zip(batch["decoder_attention_mask"], batch["labels"])]
+    ]
     return batch
 
 column_names = raw_train_dataset.column_names
@@ -467,16 +507,16 @@ test_dataset = raw_test_dataset.map(
 )
 
 print('Vocab size: ', model.config.encoder.vocab_size)
-print('Decoder start token: ', tokenizer.convert_ids_to_tokens(model.config.decoder_start_token_id))
+print('Decoder start token: ', gpt2_tokenizer.convert_ids_to_tokens(model.config.decoder_start_token_id))
 
 ids = list(train_dataset[0]["input_ids"])
 print(f'Example input ids: {ids}')
-print(f'Example input tokens: {tokenizer.convert_ids_to_tokens(ids)}')
+print(f'Example input tokens: {roberta_tokenizer.convert_ids_to_tokens(ids)}')
 print()
 
 label_ids = list(train_dataset[0]["decoder_input_ids"])
 print(f'Example label ids: {label_ids}')
-print(f'Example label tokens: {tokenizer.convert_ids_to_tokens(label_ids)}')
+print(f'Example label tokens: {gpt2_tokenizer.convert_ids_to_tokens(label_ids)}')
 print()
 
 sacrebleu = evaluate.load("sacrebleu")
@@ -487,9 +527,9 @@ def compute_metrics(eval_preds):
     label_ids = eval_preds.label_ids
     pred_ids = eval_preds.predictions
 
-    pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    label_ids[label_ids == -100] = tokenizer.eos_token_id
-    label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+    pred_str = gpt2_tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    label_ids[label_ids == -100] = gpt2_tokenizer.eos_token_id
+    label_str = gpt2_tokenizer.batch_decode(label_ids, skip_special_tokens=True)
     result = {}
     
     result["sacrebleu"] = sacrebleu.compute(predictions=pred_str, references=label_str)
@@ -507,7 +547,7 @@ trainer = Seq2SeqTrainer(
     args=training_args,
     train_dataset=train_dataset if training_args.do_train else None,
     eval_dataset=val_dataset if training_args.do_eval else None,
-    tokenizer=tokenizer,
+    tokenizer=roberta_tokenizer,
     # data_collator=data_collator,
     compute_metrics=compute_metrics if training_args.predict_with_generate else None,
 )
@@ -525,7 +565,7 @@ if training_args.do_predict:
     print(predict_results)
 
 if training_args.predict_with_generate:
-    predictions = tokenizer.batch_decode(
+    predictions = gpt2_tokenizer.batch_decode(
         predict_results.predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
     )
     predictions = [pred.strip() for pred in predictions]
