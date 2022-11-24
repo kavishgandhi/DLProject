@@ -286,7 +286,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--train_file", "train_data_text_label.json",
     "--validation_file", "val_data_text_label.json",
     "--test_file", "test_data_text_label.json",
-    "--model_name_or_path", "microsoft/codebert-base",
+    "--model_name_or_path", "huggingface/CodeBERTa-small-v1",
     "--dataset_name", "codesc",
     "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
@@ -295,7 +295,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--do_train", "True",
     "--do_eval", "True",
     "--do_predict", "True",
-    "--learning_rate", "1e-5",
+    "--learning_rate", "1e-6",
     "--generation_num_beams", "4",
     "--per_device_train_batch_size", "8",
     "--per_device_eval_batch_size", "8",
@@ -387,7 +387,7 @@ tokenizer.eos_token = tokenizer.sep_token
 
 model.encoder.resize_token_embeddings(len(tokenizer))
 model.decoder.resize_token_embeddings(len(tokenizer))
-model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(TGT_LANG)
+model.config.decoder_start_token_id = tokenizer.eos_token_id #tokenizer.convert_tokens_to_ids(TGT_LANG)
 model.config.eos_token_id = tokenizer.eos_token_id
 model.config.pad_token_id = tokenizer.pad_token_id
 model.config.vocab_size = model.config.decoder.vocab_size
@@ -424,11 +424,11 @@ prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 padding = "max_length" if data_args.pad_to_max_length else False
 
 def preprocess_function(batch):
-    for i in range(len(batch["text"])):
-        batch['text'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['text'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{SRC_LANG}"
-        batch['label'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['label'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{TGT_LANG}"
-    inputs = tokenizer(batch["text"], max_length=data_args.max_source_length, add_special_tokens=False, padding="max_length", truncation=True)
-    labels = tokenizer(batch["label"], max_length=data_args.max_target_length, add_special_tokens=False, padding="max_length", truncation=True)
+    # for i in range(len(batch["text"])):
+    #     batch['text'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['text'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{SRC_LANG}"
+    #     batch['label'][i] = f"{tokenizer.convert_ids_to_tokens(tokenizer.bos_token_id)}{batch['label'][i]}{tokenizer.convert_ids_to_tokens(tokenizer.eos_token_id)}{TGT_LANG}"
+    inputs = tokenizer(batch["text"], max_length=data_args.max_source_length, padding="max_length", truncation=True)
+    labels = tokenizer(batch["label"], max_length=data_args.max_target_length, padding="max_length", truncation=True)
 
     batch["input_ids"] = inputs.input_ids
     batch["attention_mask"] = inputs.attention_mask
