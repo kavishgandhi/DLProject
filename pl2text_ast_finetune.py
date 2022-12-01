@@ -260,22 +260,25 @@ class DataTrainingArguments:
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
 
-def convert_data(code_file, desc_file):
-    code_data, desc_data = [], []
-    with open(code_file, 'r') as f1, open(desc_file, 'r') as f2:
+def convert_data(code_file, desc_file, ast_file):
+    code_data, desc_data, ast_data = [], [], []
+    with open(code_file, 'r') as f1, open(desc_file, 'r') as f2, open(ast_file, 'r') as f3:
         temp_code_data = f1.read()
         temp_desc_data = f2.read()
+        temp_ast_data = f3.read()
     
     temp_code_data = temp_code_data.split('\n')
     temp_desc_data = temp_desc_data.split('\n')
+    temp_ast_data = temp_ast_data.split('\n')
     print('Converting data...')
     for i in tqdm(range(len(temp_code_data))):
-        code, desc = temp_code_data[i].split(), temp_desc_data[i].split()
-        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4:
+        code, desc, ast = temp_code_data[i].split(), temp_desc_data[i].split(), temp_ast_data[i].split()
+        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4 and 150 >= len(ast) >= 7:
             code_data.append(temp_code_data[i])
             desc_data.append(temp_desc_data[i].lower())
-    
-    return code_data, desc_data
+            ast_data.append(temp_ast_data[i])
+
+    return code_data, desc_data, ast_data
 
 parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
 model_args, data_args, training_args = parser.parse_args_into_dataclasses([
@@ -305,59 +308,68 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--evaluation_strategy", "steps",
     "--eval_steps", "4000",
     "--save_total_limit", "1",
-    "--max_source_length", "250",
+    "--max_source_length", "600",
     "--max_target_length", "80",
     ])
 set_seed(training_args.seed)
 
 if 'checkpoint' in model_args.model_name_or_path:
-    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_finetuned')
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_finetuned'
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_mask_infil_delete_finetuned_ast')
+    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil_delete_finetuned_ast'
 else:
-    training_args.output_dir = os.path.join(training_args.output_dir, data_args.dataset_name)
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
+    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_plbart_base_ast')
+    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_plbart_base_ast'
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train, ast_data_train = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.train.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.train.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.dataset_name}.ast.train.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train, ast_data_train = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.train.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.train.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.train.txt")
 with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_train, desc_data_train):
+    for code, desc, ast in zip(code_data_train, desc_data_train, ast_data_train):
         temp = dict()
         temp["text"] = code
+        temp["ast"] = ast
         temp["label"] = desc
         json.dump(temp, openfile)
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+    code_data_val, desc_data_val, ast_data_val = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.val.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.val.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.val.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
+    code_data_val, desc_data_val, ast_data_val = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.val.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.val.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.val.txt")
 with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_val, desc_data_val):
+    for code, desc, ast in zip(code_data_val, desc_data_val, ast_data_val):
         temp = dict()
         temp["text"] = code
+        temp["ast"] = ast
         temp["label"] = desc
         json.dump(temp, openfile)
         openfile.write('\n')
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+    code_data_test, desc_data_test, ast_data_test = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.test.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.test.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.test.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
+    code_data_test, desc_data_test, ast_data_test = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.test.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.test.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.test.txt")
 with open(os.path.join(training_args.output_dir, 'test_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_test, desc_data_test):
+    for code, desc, ast in zip(code_data_test, desc_data_test, ast_data_test):
         temp = dict()
         temp["text"] = code
+        temp["ast"] = ast
         temp["label"] = desc
         json.dump(temp, openfile)
         openfile.write('\n')
@@ -412,7 +424,7 @@ def preprocess_function(examples):
     inputs, targets = [], []
 
     for i in range(len(examples['text'])):
-        inputs.append(examples['text'][i])
+        inputs.append(examples['text'][i] + "</s>" + examples['ast'][i])
         targets.append(examples['label'][i])
 
     inputs = [prefix + inp for inp in inputs]

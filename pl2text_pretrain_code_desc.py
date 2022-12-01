@@ -281,7 +281,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--do_train", "True",
     "--learning_rate", "3e-4",
     "--generation_num_beams", "4",
-    "--per_device_train_batch_size", "16",
+    "--per_device_train_batch_size", "32",
     "--num_train_epochs", "4",
     "--save_total_limit", "1",
     "--overwrite_output_dir",
@@ -295,8 +295,8 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     ])
 set_seed(training_args.seed)
 
-training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil")
-training_args.run_name = f"{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask_infil"
+training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask")
+training_args.run_name = f"{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_mask"
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
@@ -448,7 +448,7 @@ def preprocess_function(examples):
         target = examples['label'][i].split()
         input_noised = input.copy()
         target_noised = target.copy()
-        task = random.randint(0, 1)
+        task = random.randint(0, 0)
         if task == 0:
             target_noised = apply_masking(target_noised)
             input_noised = apply_masking(input_noised)
