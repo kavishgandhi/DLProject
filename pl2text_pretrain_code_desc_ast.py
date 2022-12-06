@@ -1,32 +1,18 @@
-import pickle as pkl
-from numpy import pad
 from tqdm import tqdm
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torch.optim import Adam, AdamW, lr_scheduler
-import torch.nn as nn
-import torch.nn.functional as F
 import torch
-from torch.nn.utils.rnn import pad_sequence
-from transformers import get_linear_schedule_with_warmup
 import os
 import json
-import itertools
-import wandb
-from sklearn.metrics import precision_score, recall_score, f1_score
+import random
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-import datasets
 import nltk  # Here to have a nice missing dependency error message early on
 import numpy as np
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset
 
 import evaluate
-import statistics
-import transformers
 from filelock import FileLock
 from transformers import (
     AutoConfig,
@@ -40,8 +26,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-# os.environ['WANDB_NOTEBOOK_NAME'] = 'pl2text'
-# wandb.init(project="pl2text")
+random.seed(2022)
 
 logger = logging.getLogger(__name__)
 nltk.download('punkt')
@@ -260,112 +245,85 @@ class DataTrainingArguments:
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
 
-def convert_data(code_file, desc_file):
-    code_data, desc_data = [], []
-    with open(code_file, 'r') as f1, open(desc_file, 'r') as f2:
+def convert_data(code_file, desc_file, ast_file):
+    code_data, desc_data, ast_data = [], [], []
+    with open(code_file, 'r') as f1, open(desc_file, 'r') as f2, open(ast_file, 'r') as f3:
         temp_code_data = f1.read()
         temp_desc_data = f2.read()
+        temp_ast_data = f3.read()
     
     temp_code_data = temp_code_data.split('\n')
     temp_desc_data = temp_desc_data.split('\n')
+    temp_ast_data = temp_ast_data.split('\n')
     print('Converting data...')
     for i in tqdm(range(len(temp_code_data))):
-        code, desc = temp_code_data[i].split(), temp_desc_data[i].split()
-        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4:
+        code, desc, ast = temp_code_data[i].split(), temp_desc_data[i].split(), temp_ast_data[i].split()
+        if 200 >= len(code) >= 4 and 60 >= len(desc) >= 4 and 150 >= len(ast) >= 7:
             code_data.append(temp_code_data[i])
             desc_data.append(temp_desc_data[i].lower())
-    
-    return code_data, desc_data
+            ast_data.append(temp_ast_data[i])
+            
+    assert len(code_data) == len(desc_data) == len(ast_data)
+    idxs = random.sample(range(len(code_data)), 300000)
+    sub_set_code_data, sub_set_desc_data, sub_set_ast_data = [], [], []
+    for idx in idxs:
+        sub_set_code_data.append(code_data[idx])
+        sub_set_desc_data.append(desc_data[idx])
+        sub_set_ast_data.append(ast_data[idx])
+
+    return sub_set_code_data, sub_set_desc_data, sub_set_ast_data
 
 parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
 model_args, data_args, training_args = parser.parse_args_into_dataclasses([
     "--train_file", "train_data_text_label.json",
-    "--validation_file", "val_data_text_label.json",
-    "--test_file", "test_data_text_label.json",
-    "--model_name_or_path", "/localscratch/vjain312/pl2text/codesc_java_en_XX_pretrain_ast_mask_infil_delete/checkpoint-37500",
+    "--model_name_or_path", "uclanlp/plbart-base",
     "--dataset_name", "codesc",
     "--output_dir", "/localscratch/vjain312/pl2text",
     "--source_lang", "java",
     "--target_lang", "en_XX",
     "--ignore_pad_token_for_loss", "True",
     "--do_train", "True",
-    "--do_eval", "True",
-    "--do_predict", "True",
     "--learning_rate", "3e-4",
     "--generation_num_beams", "4",
-    "--per_device_train_batch_size", "16",
-    "--per_device_eval_batch_size", "16",
-    "--num_train_epochs", "20",
+    "--per_device_train_batch_size", "8",
+    "--num_train_epochs", "2",
+    "--save_total_limit", "1",
     "--overwrite_output_dir",
-    "--predict_with_generate", "True",
+    "--predict_with_generate", "False",
     "--report_to", "wandb",
     "--run_name", "plbart",
     "--logging_steps", "20",
     "--save_strategy", "epoch",
-    "--evaluation_strategy", "steps",
-    "--eval_steps", "4000",
-    "--save_total_limit", "1",
-    "--max_source_length", "250",
-    "--max_target_length", "80",
+    "--max_source_length", "600",
+    "--max_target_length", "600",
     ])
 set_seed(training_args.seed)
 
-if 'checkpoint' in model_args.model_name_or_path:
-    training_args.output_dir = os.path.join(training_args.output_dir, f'{data_args.dataset_name}_pretrain_ast_mask_infil_delete_finetuned')
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_ast_mask_infil_delete_finetuned'
-else:
-    training_args.output_dir = os.path.join(training_args.output_dir, data_args.dataset_name)
-    training_args.run_name = f'{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}'
+training_args.output_dir = os.path.join(training_args.output_dir, f"{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_ast_mask_infil_delete")
+training_args.run_name = f"{training_args.run_name}_{data_args.dataset_name}_{data_args.source_lang}_{data_args.target_lang}_pretrain_ast_mask_infil_delete"
 
 if not os.path.exists(training_args.output_dir):
     os.mkdir(training_args.output_dir)
 
 if data_args.dataset_name == "codesearchnet":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train, ast_data_train = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.pretrain.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.pretrain.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.dataset_name}.ast.pretrain.txt")
 elif data_args.dataset_name == "codesc":
-    code_data_train, desc_data_train = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.train.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.train.txt")
+    code_data_train, desc_data_train, ast_data_train = convert_data(f"/localscratch/vjain312/ast_data/{data_args.source_lang}.code.pretrain.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.desc.pretrain.txt",
+                                                    f"/localscratch/vjain312/ast_data/{data_args.source_lang}.ast.pretrain.txt")
 with open(os.path.join(training_args.output_dir, 'train_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_train, desc_data_train):
+    for code, desc, ast in zip(code_data_train, desc_data_train, ast_data_train):
         temp = dict()
         temp["text"] = code
-        temp["label"] = desc
-        json.dump(temp, openfile)
-        openfile.write('\n')
-
-if data_args.dataset_name == "codesearchnet":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
-elif data_args.dataset_name == "codesc":
-    code_data_val, desc_data_val = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.val.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.val.txt")
-with open(os.path.join(training_args.output_dir, 'val_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_val, desc_data_val):
-        temp = dict()
-        temp["text"] = code
-        temp["label"] = desc
-        json.dump(temp, openfile)
-        openfile.write('\n')
-
-if data_args.dataset_name == "codesearchnet":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
-elif data_args.dataset_name == "codesc":
-    code_data_test, desc_data_test = convert_data(f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.code.test.txt",
-                                                    f"/localscratch/vjain312/DL-project-data/{data_args.dataset_name}/{data_args.source_lang}.desc.test.txt")
-with open(os.path.join(training_args.output_dir, 'test_data_text_label.json'), 'w') as openfile:
-    for code, desc in zip(code_data_test, desc_data_test):
-        temp = dict()
-        temp["text"] = code
+        temp["ast"] = ast
         temp["label"] = desc
         json.dump(temp, openfile)
         openfile.write('\n')
 
 extension = "json"
 raw_train_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.train_file), split="train")
-raw_validation_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.validation_file), split="train")
-raw_test_dataset = load_dataset(extension, data_files=os.path.join(training_args.output_dir, data_args.test_file), split="train")
 
 config = AutoConfig.from_pretrained(
     model_args.config_name if model_args.config_name else model_args.model_name_or_path,
@@ -390,7 +348,13 @@ model = AutoModelForSeq2SeqLM.from_pretrained(
     revision=model_args.model_revision,
     use_auth_token=True if model_args.use_auth_token else None,
 )
-model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.target_lang)
+
+tokenizer.add_tokens("java_en", special_tokens=True)
+model.resize_token_embeddings(len(tokenizer))
+tokenizer.lang_code_to_id["java_en"] = tokenizer.convert_tokens_to_ids("java_en")
+tokenizer.src_lang = "java_en"
+tokenizer.tgt_lang = "java_en"
+model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids("java_en")
 
 tgt_text = raw_train_dataset[0]["label"]
 print(f'Raw description: {tgt_text}')
@@ -408,24 +372,133 @@ if training_args.label_smoothing_factor > 0 and not hasattr(model, "prepare_deco
 
 prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 
+def apply_masking(target):
+    target_idxs = random.sample(range(0, len(target)), max(1, int(0.15 * len(target))))
+
+    mask_token_idxs = random.sample(target_idxs, int(0.8 * len(target_idxs)))
+    random_and_no_change_token_idxs = list(set(target_idxs) - set(mask_token_idxs))
+    rtr_idxs = random.sample(random_and_no_change_token_idxs, int(0.5 * len(random_and_no_change_token_idxs)))
+    token_idxs_left = list(set(range(len(target))) - set(target_idxs))
+
+    for idx in mask_token_idxs:
+        target[idx] = "<mask>"
+
+    for idx in rtr_idxs:
+        rand_token_idx = random.choice(token_idxs_left)
+        target[idx] = target[rand_token_idx]
+
+    return target
+
+def apply_infilling(target):
+    span_lengths = []
+    total_to_be_masked = int(0.15 * len(target))
+    num_masked = 0
+    if total_to_be_masked == 0:
+        idx = random.randint(0, len(target) - 1)
+        target[idx] = "<mask>"
+    else:
+        while num_masked < total_to_be_masked:
+            span_length = 0
+            while span_length == 0:
+                span_length = np.random.poisson(3.5)
+            num_masked += span_length
+            span_lengths.append(span_length)
+
+        if sum(span_lengths) > int(0.45 * len(target)):
+            target = apply_masking(target)
+        else:
+            infilling_mask = [0] * len(target)
+            starts = random.sample(range(0, len(target)), len(span_lengths))
+            for j in range(len(starts)):
+                start = starts[j]
+                end = min(len(infilling_mask), start + span_lengths[j])
+                for k in range(start, end):
+                    infilling_mask[k] = 1
+            temp = []
+            j = 0
+            while j < len(infilling_mask):
+                if infilling_mask[j] == 0:
+                    temp.append(target[j])
+                    j += 1
+                else:
+                    while j < len(infilling_mask) and infilling_mask[j] == 1:
+                        j += 1
+                    temp.append("<mask>")
+            target = temp.copy()
+    return target
+
+def apply_token_deletion(target):
+    target_idxs = random.sample(range(0, len(target)), max(1, int(0.15 * len(target))))
+
+    delete_token_idxs = random.sample(target_idxs, max(1, int(0.8 * len(target_idxs))))
+    rtr_idxs = list(set(target_idxs) - set(delete_token_idxs))
+    to_be_deleted = [False] * len(target)
+    for idx in delete_token_idxs:
+        to_be_deleted[idx] = True
+
+    for idx in rtr_idxs:
+        rand_token_idx = random.choice(rtr_idxs)
+        target[idx] = target[rand_token_idx]
+    
+    deleted_tokens_target = []
+    for i in range(len(target)):
+        if not to_be_deleted[i]:
+            deleted_tokens_target.append(target[i])
+
+    return deleted_tokens_target
+
 def preprocess_function(examples):
-    inputs, targets = [], []
+    inputs, label_inputs, label_outputs = [], [], []
 
     for i in range(len(examples['text'])):
-        inputs.append(examples['text'][i])
-        targets.append(examples['label'][i])
+        input = examples['text'][i].split()
+        input_ast = examples['ast'][i].split()
+        target = examples['label'][i].split()
+        input_noised = input.copy()
+        input_ast_noised = input_ast.copy()
+        target_noised = target.copy()
+        task = random.randint(0, 2)
+        if task == 0:
+            target_noised = apply_masking(target_noised)
+            input_noised = apply_masking(input_noised)
+            input_ast_noised = apply_masking(input_ast_noised)
+        elif task == 1:
+            target_noised = apply_infilling(target_noised)
+            input_noised = apply_infilling(input_noised)
+            input_ast_noised = apply_infilling(input_ast_noised)
+        else:
+            target_noised = apply_token_deletion(target_noised) 
+            input_noised = apply_token_deletion(input_noised)
+            input_ast_noised = apply_token_deletion(input_ast_noised)
+        
+        model_input = input_noised + ["</s>"] + input_ast_noised + ["</s>"] + target_noised
+        model_output = input + ["</s>"] + input_ast + ["</s>"] + target
+        # model_output = target
+        model_input = ' '.join(model_input)
+        model_output = ' '.join(model_output)
+        # print(f'Task: {task}')
+        # print(f'Model input: {model_input}')
+        # print(f'Model output: {model_output}')
+        # print()
+        # print('-----------------------------------------')
+        # print()
+
+        inputs.append(model_input)
+        label_outputs.append(model_output)
 
     inputs = [prefix + inp for inp in inputs]
     model_inputs = tokenizer(inputs, max_length=data_args.max_source_length, padding=padding, truncation=True)
-    labels = tokenizer(text_target=targets, max_length=data_args.max_target_length, padding=padding, truncation=True)
+    
+    model_label_outputs = tokenizer(text_target=label_outputs, max_length=data_args.max_target_length, padding=padding, truncation=True)
+
     # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
     # padding in the loss.
     if padding == "max_length" and data_args.ignore_pad_token_for_loss:
-        labels["input_ids"] = [
-            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
+        model_label_outputs["input_ids"] = [
+            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in model_label_outputs["input_ids"]
         ]
         
-    model_inputs["labels"] = labels["input_ids"]
+    model_inputs["labels"] = model_label_outputs["input_ids"]
     return model_inputs
 
 column_names = raw_train_dataset.column_names
@@ -438,24 +511,6 @@ train_dataset = raw_train_dataset.map(
     desc="Running tokenizer on train dataset",
 )
 
-val_dataset = raw_validation_dataset.map(
-    preprocess_function,
-    batched=True,
-    batch_size=training_args.per_device_train_batch_size,
-    remove_columns=column_names,
-    num_proc=data_args.preprocessing_num_workers,
-    desc="Running tokenizer on validation dataset"
-)
-
-test_dataset = raw_test_dataset.map(
-    preprocess_function,
-    batched=True,
-    batch_size=training_args.per_device_train_batch_size,
-    remove_columns=column_names,
-    num_proc=data_args.preprocessing_num_workers,
-    desc="Running tokenizer on test dataset",
-)
-
 ids = list(train_dataset[0]["input_ids"])
 print(f'Example input ids: {ids}')
 print(f'Example input tokens: {tokenizer.convert_ids_to_tokens(ids)}')
@@ -466,8 +521,7 @@ print(f'Example label ids: {label_ids}')
 print(f'Example label tokens: {tokenizer.convert_ids_to_tokens(label_ids)}')
 print()
 
-model.config.decoder_start_token_id = tokenizer.convert_tokens_to_ids(data_args.target_lang)
-print(f'Decoder start token id: {model.config.decoder_start_token_id}')
+print(f'Decoder start token id: {tokenizer.convert_ids_to_tokens(model.config.decoder_start_token_id)}')
 
 # Data collator
 label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
@@ -476,44 +530,6 @@ data_collator = DataCollatorForSeq2Seq(
     label_pad_token_id=label_pad_token_id,
     pad_to_multiple_of=8 if training_args.fp16 else None,
 )
-
-sacrebleu = evaluate.load("sacrebleu")
-bleu = evaluate.load("bleu")
-rouge = evaluate.load("rouge")
-
-def postprocess_text(preds, labels):
-    preds = [pred.strip() for pred in preds]
-    labels = [label.strip() for label in labels]
-    return preds, labels
-
-def compute_metrics(eval_preds):
-    preds, labels = eval_preds
-    if isinstance(preds, tuple):
-        preds = preds[0]
-    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    if data_args.ignore_pad_token_for_loss:
-        # Replace -100 in the labels as we can't decode them.
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-    # Some simple post-processing
-    decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-
-    result = {}
-    
-    result["sacrebleu"] = sacrebleu.compute(predictions=decoded_preds, references=decoded_labels)
-    result["bleu"] = bleu.compute(predictions=decoded_preds, references=decoded_labels)
-    result["bleu_1"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=1)
-    result["bleu_2"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=2)
-    result["bleu_3"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=3)
-    result["bleu_4"] = bleu.compute(predictions=decoded_preds, references=decoded_labels, max_order=4)
-
-    result["rouge"] = rouge.compute(predictions=decoded_preds, references=decoded_labels)
-    
-    prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
-    result["gen_len"] = np.mean(prediction_lens)
-    # result = {k: round(v, 4) for k, v in result.items()}
-    return result
 
 # Detecting last checkpoint.
 last_checkpoint = None
@@ -535,10 +551,9 @@ trainer = Seq2SeqTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset if training_args.do_train else None,
-    eval_dataset=val_dataset if training_args.do_eval else None,
     tokenizer=tokenizer,
     data_collator=data_collator,
-    compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+    compute_metrics=None,
 )
 
 checkpoint = None
@@ -546,24 +561,8 @@ if training_args.resume_from_checkpoint is not None:
     checkpoint = training_args.resume_from_checkpoint
 elif last_checkpoint is not None:
     checkpoint = last_checkpoint
+train_result = trainer.train(resume_from_checkpoint=checkpoint)
+trainer.save_model()
+trainer.save_metrics("train", train_result.metrics)
 
-if training_args.do_train:
-    train_result = trainer.train(resume_from_checkpoint=checkpoint)
-    trainer.save_model()  # Saves the tokenizer too for easy upload
-    trainer.save_metrics("train", train_result.metrics)
-    print(train_result)
-
-
-if training_args.do_predict:
-    predict_results = trainer.predict(test_dataset, metric_key_prefix="predict", max_length=training_args.generation_max_length, num_beams=training_args.generation_num_beams)
-    trainer.save_metrics("predict", predict_results.metrics)
-    print(predict_results)
-
-if training_args.predict_with_generate:
-    predictions = tokenizer.batch_decode(
-        predict_results.predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
-    )
-    predictions = [pred.strip() for pred in predictions]
-    output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.txt")
-    with open(output_prediction_file, "w", encoding="utf-8") as writer:
-        writer.write("\n".join(predictions))
+print(train_result)
